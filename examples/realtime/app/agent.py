@@ -1,92 +1,183 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any
+
+import httpx
+
 from agents import function_tool
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from agents.realtime import RealtimeAgent, realtime_handoff
 
 """
-When running the UI example locally, you can edit this file to change the setup. THe server
-will use the agent returned from get_starting_agent() as the starting agent."""
+When running the UI example locally, you can edit this file to change the setup.
+The server will use the agent returned from get_starting_agent() as the starting agent.
+"""
 
-### TOOLS
+# Sample menu data.
+MENUS: dict[str, list[dict[str, Any]]] = {
+    "monday": [
+        {
+            "name": "Salmón a la plancha con quinoa",
+            "calories": 450,
+            "macros": {"protein": 35, "carbs": 40, "fat": 18},
+            "allergens": ["pescado"],
+        },
+        {
+            "name": "Ensalada griega con feta",
+            "calories": 320,
+            "macros": {"protein": 10, "carbs": 25, "fat": 22},
+            "allergens": ["lácteos"],
+        },
+    ],
+    "tuesday": [
+        {
+            "name": "Brochetas de pollo con arroz",
+            "calories": 500,
+            "macros": {"protein": 40, "carbs": 55, "fat": 15},
+            "allergens": [],
+        },
+        {
+            "name": "Sopa de lentejas con verduras",
+            "calories": 300,
+            "macros": {"protein": 18, "carbs": 35, "fat": 8},
+            "allergens": [],
+        },
+    ],
+    "wednesday": [
+        {
+            "name": "Paella de verduras",
+            "calories": 400,
+            "macros": {"protein": 12, "carbs": 60, "fat": 12},
+            "allergens": [],
+        },
+        {
+            "name": "Bacalao al horno con patatas",
+            "calories": 480,
+            "macros": {"protein": 38, "carbs": 45, "fat": 14},
+            "allergens": ["pescado"],
+        },
+    ],
+}
+
+SPANISH_DAYS = {
+    "lunes": "monday",
+    "martes": "tuesday",
+    "miercoles": "wednesday",
+    "miércoles": "wednesday",
+    "jueves": "thursday",
+    "viernes": "friday",
+    "sabado": "saturday",
+    "sábado": "saturday",
+    "domingo": "sunday",
+}
+
+
+def _normalize_day(day: str) -> str:
+    day_lower = day.lower()
+    if day_lower in {"today", "hoy"}:
+        return datetime.now().strftime("%A").lower()
+    if day_lower in {"tomorrow", "ma\u00f1ana", "manana"}:
+        return (datetime.now() + timedelta(days=1)).strftime("%A").lower()
+    if day_lower in SPANISH_DAYS:
+        return SPANISH_DAYS[day_lower]
+    return day_lower
+
+
+@function_tool(name_override="menu_lookup", description_override="List the menu for a given day.")
+def menu_lookup(day: str) -> str:
+    normalized = _normalize_day(day)
+    items = MENUS.get(normalized)
+    if not items:
+        return f"No hay menú disponible para {day}."
+    names = ", ".join(item["name"] for item in items)
+    return f"Menú para {normalized.capitalize()}: {names}."
 
 
 @function_tool(
-    name_override="faq_lookup_tool", description_override="Lookup frequently asked questions."
+    name_override="nutrition_info", description_override="Get nutrition facts for a dish."
 )
-async def faq_lookup_tool(question: str) -> str:
-    if "bag" in question or "baggage" in question:
-        return (
-            "You are allowed to bring one bag on the plane. "
-            "It must be under 50 pounds and 22 inches x 14 inches x 9 inches."
-        )
-    elif "seats" in question or "plane" in question:
-        return (
-            "There are 120 seats on the plane. "
-            "There are 22 business class seats and 98 economy seats. "
-            "Exit rows are rows 4 and 16. "
-            "Rows 5-8 are Economy Plus, with extra legroom. "
-        )
-    elif "wifi" in question:
-        return "We have free wifi on the plane, join Airline-Wifi"
-    return "I'm sorry, I don't know the answer to that question."
+def nutrition_info(dish: str) -> str:
+    dish_lower = dish.lower()
+    for items in MENUS.values():
+        for item in items:
+            if item["name"].lower() == dish_lower:
+                macros = item["macros"]
+                return (
+                    f"{item['name']} tiene {item['calories']} calorías, "
+                    f"{macros['protein']}g de proteínas, {macros['carbs']}g de carbohidratos y {macros['fat']}g de grasas."
+                )
+    return f"La información nutricional de {dish} no está disponible."
 
 
-@function_tool
-async def update_seat(confirmation_number: str, new_seat: str) -> str:
-    """
-    Update the seat for a given confirmation number.
-
-    Args:
-        confirmation_number: The confirmation number for the flight.
-        new_seat: The new seat to update to.
-    """
-    return f"Updated seat to {new_seat} for confirmation number {confirmation_number}"
-
-
-@function_tool
-def get_weather(city: str) -> str:
-    """Get the weather in a city."""
-    return f"The weather in {city} is sunny."
+@function_tool(name_override="allergen_check", description_override="Check allergens for a dish.")
+def allergen_check(dish: str) -> str:
+    dish_lower = dish.lower()
+    for items in MENUS.values():
+        for item in items:
+            if item["name"].lower() == dish_lower:
+                allergens = item["allergens"]
+                if not allergens:
+                    return f"{item['name']} no contiene alérgenos conocidos."
+                return f"{item['name']} contiene: {', '.join(allergens)}."
+    return f"La información de alérgenos de {dish} no está disponible."
 
 
-faq_agent = RealtimeAgent(
-    name="FAQ Agent",
-    handoff_description="A helpful agent that can answer questions about the airline.",
+@function_tool(name_override="place_order", description_override="Submit a food order.")
+async def place_order(dish: str, quantity: int) -> str:
+    payload = {"dish": dish, "quantity": quantity}
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post("https://example.com/orders", json=payload, timeout=5)
+    except Exception:
+        pass
+    return f"Pedido realizado: {quantity} x {dish}."
+
+
+menu_agent = RealtimeAgent(
+    name="Menu Agent",
+    handoff_description="Lists daily menus.",
     instructions=f"""{RECOMMENDED_PROMPT_PREFIX}
-    You are an FAQ agent. If you are speaking to a customer, you probably were transferred to from the triage agent.
-    Use the following routine to support the customer.
-    # Routine
-    1. Identify the last question asked by the customer.
-    2. Use the faq lookup tool to answer the question. Do not rely on your own knowledge.
-    3. If you cannot answer the question, transfer back to the triage agent.""",
-    tools=[faq_lookup_tool],
+You are the menu agent for a Mediterranean meal service.
+Use the menu lookup tool to tell customers what is available for the requested day.""",
+    tools=[menu_lookup],
 )
 
-seat_booking_agent = RealtimeAgent(
-    name="Seat Booking Agent",
-    handoff_description="A helpful agent that can update a seat on a flight.",
+nutrition_agent = RealtimeAgent(
+    name="Nutrition Agent",
+    handoff_description="Provides nutritional information about menu items.",
     instructions=f"""{RECOMMENDED_PROMPT_PREFIX}
-    You are a seat booking agent. If you are speaking to a customer, you probably were transferred to from the triage agent.
-    Use the following routine to support the customer.
-    # Routine
-    1. Ask for their confirmation number.
-    2. Ask the customer what their desired seat number is.
-    3. Use the update seat tool to update the seat on the flight.
-    If the customer asks a question that is not related to the routine, transfer back to the triage agent. """,
-    tools=[update_seat],
+You analyze dishes for their nutritional content using the nutrition info tool.""",
+    tools=[nutrition_info],
+)
+
+allergen_agent = RealtimeAgent(
+    name="Allergen Agent",
+    handoff_description="Informs customers about allergens in dishes.",
+    instructions=f"""{RECOMMENDED_PROMPT_PREFIX}
+You check dishes for potential allergens using the allergen check tool.""",
+    tools=[allergen_check],
+)
+
+order_agent = RealtimeAgent(
+    name="Order Agent",
+    handoff_description="Places customer orders with the kitchen.",
+    instructions=f"""{RECOMMENDED_PROMPT_PREFIX}
+You finalize customer orders by calling the place order tool.""",
+    tools=[place_order],
 )
 
 triage_agent = RealtimeAgent(
     name="Triage Agent",
-    handoff_description="A triage agent that can delegate a customer's request to the appropriate agent.",
-    instructions=(
-        f"{RECOMMENDED_PROMPT_PREFIX} "
-        "You are a helpful triaging agent. You can use your tools to delegate questions to other appropriate agents."
-    ),
-    handoffs=[faq_agent, realtime_handoff(seat_booking_agent)],
+    handoff_description="Routes customer requests to the correct specialist agent.",
+    instructions=f"{RECOMMENDED_PROMPT_PREFIX} You are a helpful triage agent for a prepared meals restaurant. Delegate each customer request to the appropriate agent.",
+    handoffs=[menu_agent, nutrition_agent, allergen_agent, realtime_handoff(order_agent)],
 )
 
-faq_agent.handoffs.append(triage_agent)
-seat_booking_agent.handoffs.append(triage_agent)
+menu_agent.handoffs.append(triage_agent)
+nutrition_agent.handoffs.append(triage_agent)
+allergen_agent.handoffs.append(triage_agent)
+order_agent.handoffs.append(triage_agent)
 
 
 def get_starting_agent() -> RealtimeAgent:
