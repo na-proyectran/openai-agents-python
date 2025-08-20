@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-import httpx
-
 from agents import function_tool
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from agents.realtime import RealtimeAgent, realtime_handoff
@@ -126,11 +124,6 @@ def allergen_check(dish: str) -> str:
 @function_tool(name_override="place_order", description_override="Submit a food order.")
 async def place_order(dish: str, quantity: int) -> str:
     payload = {"dish": dish, "quantity": quantity}
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post("https://example.com/orders", json=payload, timeout=5)
-    except Exception:
-        pass
     return f"Pedido realizado: {quantity} x {dish}."
 
 
