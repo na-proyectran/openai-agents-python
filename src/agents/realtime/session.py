@@ -28,6 +28,7 @@ from .events import (
     RealtimeHandoffEvent,
     RealtimeHistoryAdded,
     RealtimeHistoryUpdated,
+    RealtimeInputAudioTimeoutTriggered,
     RealtimeRawModelEvent,
     RealtimeSessionEvent,
     RealtimeToolEnd,
@@ -226,6 +227,12 @@ class RealtimeSession(RealtimeModelListener):
             self._history = RealtimeSession._get_new_history(self._history, event)
             await self._put_event(
                 RealtimeHistoryUpdated(info=self._event_info, history=self._history)
+            )
+        elif event.type == "input_audio_timeout_triggered":
+            await self._put_event(
+                RealtimeInputAudioTimeoutTriggered(
+                    info=self._event_info,
+                )
             )
         elif event.type == "transcript_delta":
             # Accumulate transcript text for guardrail debouncing per item_id
@@ -615,9 +622,6 @@ class RealtimeSession(RealtimeModelListener):
         # Start with run config model settings as base
         run_config_settings = self._run_config.get("model_settings", {})
         updated_settings: RealtimeSessionModelSettings = run_config_settings.copy()
-        # Apply starting settings (from model config) next
-        if starting_settings:
-            updated_settings.update(starting_settings)
 
         instructions, tools, handoffs = await asyncio.gather(
             agent.get_system_prompt(self._context_wrapper),
@@ -627,6 +631,10 @@ class RealtimeSession(RealtimeModelListener):
         updated_settings["instructions"] = instructions or ""
         updated_settings["tools"] = tools or []
         updated_settings["handoffs"] = handoffs or []
+
+        # Apply starting settings (from model config) next
+        if starting_settings:
+            updated_settings.update(starting_settings)
 
         disable_tracing = self._run_config.get("tracing_disabled", False)
         if disable_tracing:
