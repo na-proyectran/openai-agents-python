@@ -8,6 +8,8 @@ from typing import (
 
 from typing_extensions import NotRequired, TypeAlias, TypedDict
 
+from agents.prompts import Prompt
+
 from ..guardrail import OutputGuardrail
 from ..handoffs import Handoff
 from ..model_settings import ToolChoice
@@ -15,6 +17,8 @@ from ..tool import Tool
 
 RealtimeModelName: TypeAlias = Union[
     Literal[
+        "gpt-realtime",
+        "gpt-realtime-2025-08-28",
         "gpt-4o-realtime-preview",
         "gpt-4o-mini-realtime-preview",
         "gpt-4o-realtime-preview-2025-06-03",
@@ -90,6 +94,9 @@ class RealtimeSessionModelSettings(TypedDict):
 
     instructions: NotRequired[str]
     """System instructions for the model."""
+
+    prompt: NotRequired[Prompt]
+    """The prompt to use for the model."""
 
     modalities: NotRequired[list[Literal["text", "audio"]]]
     """The modalities the model should support."""
