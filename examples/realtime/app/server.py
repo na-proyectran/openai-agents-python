@@ -11,7 +11,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from typing_extensions import assert_never
 
-from agents.realtime import RealtimeRunner, RealtimeSession, RealtimeSessionEvent
+from agents.realtime import RealtimeRunner, RealtimeSession, RealtimeSessionEvent,\
+    RealtimeRunConfig, RealtimeSessionModelSettings
 
 # Import TwilioHandler class - handle both module and package use cases
 if TYPE_CHECKING:
@@ -41,8 +42,26 @@ class RealtimeWebSocketManager:
         await websocket.accept()
         self.websockets[session_id] = websocket
 
-        agent = get_starting_agent()
-        runner = RealtimeRunner(agent)
+        model_settings: RealtimeSessionModelSettings = {
+            "model_name": "gpt-realtime",
+            "modalities": ["text", "audio"],
+            "voice": "marin",
+            "speed": 1.0,
+            "input_audio_format": "pcm16",
+            "output_audio_format": "pcm16",
+            "input_audio_transcription": {
+                "model": "gpt-4o-mini-transcribe",
+            },
+            "turn_detection": {"type": "semantic_vad", "threshold": 0.5},
+            # "instructions": "…",                   # opcional
+            # "prompt": "…",                         # opcional
+            # "tool_choice": "auto",                 # opcional
+            # "tools": [],                           # opcional
+            # "handoffs": [],                        # opcional
+            # "tracing": {"enabled": False},         # opcional
+        }
+        runner = RealtimeRunner(starting_agent=get_starting_agent(),
+                                config=RealtimeRunConfig(model_settings=model_settings))
         session_context = await runner.run()
         session = await session_context.__aenter__()
         self.active_sessions[session_id] = session
