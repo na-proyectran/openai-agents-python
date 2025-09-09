@@ -6,6 +6,7 @@ class RealtimeDemo {
         this.isCapturing = false;
         this.audioContext = null;
         this.processor = null;
+        this.source = null;
         this.stream = null;
         this.sessionId = this.generateSessionId();
         
@@ -135,26 +136,20 @@ class RealtimeDemo {
             });
             
             this.audioContext = new AudioContext({ sampleRate: 24000 });
-            const source = this.audioContext.createMediaStreamSource(this.stream);
+            this.source = this.audioContext.createMediaStreamSource(this.stream);
             
-            // Create a script processor to capture audio data
-            this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-            source.connect(this.processor);
+            // Load the audio worklet module and set up processing
+            await this.audioContext.audioWorklet.addModule('audio-processor.js');
+            this.processor = new AudioWorkletNode(this.audioContext, 'audio-processor');
+            this.source.connect(this.processor);
             this.processor.connect(this.audioContext.destination);
-            
-            this.processor.onaudioprocess = (event) => {
+
+            // Forward audio data from the worklet to the server
+            this.processor.port.onmessage = (event) => {
                 if (!this.isMuted && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    const inputBuffer = event.inputBuffer.getChannelData(0);
-                    const int16Buffer = new Int16Array(inputBuffer.length);
-                    
-                    // Convert float32 to int16
-                    for (let i = 0; i < inputBuffer.length; i++) {
-                        int16Buffer[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
-                    }
-                    
                     this.ws.send(JSON.stringify({
                         type: 'audio',
-                        data: Array.from(int16Buffer)
+                        data: Array.from(event.data)
                     }));
                 }
             };
@@ -173,20 +168,27 @@ class RealtimeDemo {
         this.isCapturing = false;
         
         if (this.processor) {
+            this.processor.port.onmessage = null;
             this.processor.disconnect();
+            this.processor.port.close();
             this.processor = null;
         }
-        
+
+        if (this.source) {
+            this.source.disconnect();
+            this.source = null;
+        }
+
         if (this.audioContext) {
             this.audioContext.close();
             this.audioContext = null;
         }
-        
+
         if (this.stream) {
             this.stream.getTracks().forEach(track => track.stop());
             this.stream = null;
         }
-        
+
         this.updateMuteUI();
     }
     

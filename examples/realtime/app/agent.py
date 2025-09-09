@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any, Iterable, Tuple
 import unicodedata
+from collections.abc import Iterable
+from datetime import datetime, timedelta
+from typing import Any
 
 from agents import function_tool
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-from agents.realtime import RealtimeAgent, realtime_handoff
+from agents.realtime import RealtimeAgent
 
 """
 When running the UI example locally, you can edit this file to change the setup.
@@ -254,11 +255,10 @@ SPANISH_DAYS = {
     "domingo": "sunday",
 }
 
+
 def _strip_accents(s: str) -> str:
-    return "".join(
-        c for c in unicodedata.normalize("NFD", s)
-        if unicodedata.category(c) != "Mn"
-    )
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
 
 def _normalize_day(day: str) -> str:
     """
@@ -274,20 +274,25 @@ def _normalize_day(day: str) -> str:
         return SPANISH_DAYS[day_clean]
     return day_clean  # asume inglés válido (monday..sunday)
 
+
 # ---------------------------------------------------------------------
 # Helpers para recorrer la estructura anidada
 # ---------------------------------------------------------------------
-def _iter_day_dishes(day_block: dict[str, list[dict[str, Any]]]) -> Iterable[Tuple[str, dict[str, Any]]]:
+def _iter_day_dishes(
+    day_block: dict[str, list[dict[str, Any]]],
+) -> Iterable[tuple[str, dict[str, Any]]]:
     """Itera por todos los platos (primeros, segundos y postres) de un día."""
     for course_key in ("first_course", "second_course", "dessert"):
         for dish in day_block.get(course_key, []):
             yield course_key, dish
+
 
 def _iter_all_dishes() -> Iterable[dict[str, Any]]:
     """Itera por todos los platos de toda la semana."""
     for day_block in MENUS.values():
         for _, dish in _iter_day_dishes(day_block):
             yield dish
+
 
 # ---------------------------------------------------------------------
 # Tools
@@ -307,7 +312,7 @@ def menu_lookup(day: str) -> str:
 
     primeros = ", ".join(d["name"] for d in day_block.get("first_course", [])) or "—"
     segundos = ", ".join(d["name"] for d in day_block.get("second_course", [])) or "—"
-    postres  = ", ".join(d["name"] for d in day_block.get("dessert", [])) or "—"
+    postres = ", ".join(d["name"] for d in day_block.get("dessert", [])) or "—"
 
     # Respuesta legible en varias líneas
     return (
@@ -316,6 +321,7 @@ def menu_lookup(day: str) -> str:
         f"- Segundos: {segundos}\n"
         f"- Postres: {postres}"
     )
+
 
 @function_tool
 def nutrition_info(dish: str) -> str:
@@ -336,6 +342,7 @@ def nutrition_info(dish: str) -> str:
             )
     return f"La información nutricional de {dish} no está disponible."
 
+
 @function_tool
 def allergen_check(dish: str) -> str:
     """
@@ -354,6 +361,7 @@ def allergen_check(dish: str) -> str:
             return f"{d['name']} contiene: {', '.join(allergens)}."
     return f"La información de alérgenos de {dish} no está disponible."
 
+
 @function_tool
 async def place_order(dish: str, quantity: int) -> str:
     """
@@ -362,6 +370,7 @@ async def place_order(dish: str, quantity: int) -> str:
     """
     # Aquí ya está “mockeado”: no se hace ninguna petición de red.
     return f"Pedido realizado: {quantity} x {dish}."
+
 
 # ---------------------------------------------------------------------
 # Agents
@@ -376,7 +385,7 @@ Use the following routine to support the customer.
     1. Use the menu lookup tool to reply to the customer giving first plates, second and dessert options of selected day.
     2. Ask the customer if it wants to repeat the list.
     3. Ask the customer if it wants to know allergic or nutrition info.
-    If the customer asks a question that is not related to the routine, transfer back to the triage agent. 
+    If the customer asks a question that is not related to the routine, transfer back to the triage agent.
 
 Use the menu lookup tool to tell customers what is available for the requested day.""",
     tools=[menu_lookup],

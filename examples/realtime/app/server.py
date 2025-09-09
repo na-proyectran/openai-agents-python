@@ -11,8 +11,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from typing_extensions import assert_never
 
-from agents.realtime import RealtimeRunner, RealtimeSession, RealtimeSessionEvent,\
-    RealtimeRunConfig, RealtimeSessionModelSettings
+from agents.realtime import (
+    RealtimeRunConfig,
+    RealtimeRunner,
+    RealtimeSession,
+    RealtimeSessionEvent,
+    RealtimeSessionModelSettings,
+)
 
 # Import TwilioHandler class - handle both module and package use cases
 if TYPE_CHECKING:
