@@ -135,23 +135,24 @@ class RealtimeDemo {
             });
             
             this.audioContext = new AudioContext({ sampleRate: 24000 });
+            await this.audioContext.audioWorklet.addModule('audio-processor.js');
             const source = this.audioContext.createMediaStreamSource(this.stream);
-            
-            // Create a script processor to capture audio data
-            this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+
+            // Use an AudioWorkletNode to capture audio data
+            this.processor = new AudioWorkletNode(this.audioContext, 'audio-processor');
             source.connect(this.processor);
             this.processor.connect(this.audioContext.destination);
-            
-            this.processor.onaudioprocess = (event) => {
+
+            this.processor.port.onmessage = (event) => {
                 if (!this.isMuted && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    const inputBuffer = event.inputBuffer.getChannelData(0);
+                    const inputBuffer = event.data;
                     const int16Buffer = new Int16Array(inputBuffer.length);
-                    
+
                     // Convert float32 to int16
                     for (let i = 0; i < inputBuffer.length; i++) {
                         int16Buffer[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
                     }
-                    
+
                     this.ws.send(JSON.stringify({
                         type: 'audio',
                         data: Array.from(int16Buffer)
@@ -173,6 +174,7 @@ class RealtimeDemo {
         this.isCapturing = false;
         
         if (this.processor) {
+            this.processor.port.onmessage = null;
             this.processor.disconnect();
             this.processor = null;
         }
