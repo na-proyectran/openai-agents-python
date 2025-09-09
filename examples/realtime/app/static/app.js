@@ -14,6 +14,7 @@ class RealtimeDemo {
         this.isPlayingAudio = false;
         this.playbackAudioContext = null;
         this.currentAudioSource = null;
+        this.nextPlaybackTime = 0;
         
         this.initializeElements();
         this.setupEventListeners();
@@ -366,72 +367,75 @@ class RealtimeDemo {
         }
     }
     
-    async processAudioQueue() {
+    processAudioQueue() {
         if (this.isPlayingAudio || this.audioQueue.length === 0) {
             return;
         }
-        
+
         this.isPlayingAudio = true;
-        
+
         // Initialize audio context if needed
         if (!this.playbackAudioContext) {
             this.playbackAudioContext = new AudioContext({ sampleRate: 24000 });
+            this.nextPlaybackTime = this.playbackAudioContext.currentTime;
         }
-        
+
         while (this.audioQueue.length > 0) {
             const audioBase64 = this.audioQueue.shift();
-            await this.playAudioChunk(audioBase64);
+            this.playAudioChunk(audioBase64);
         }
-        
+
         this.isPlayingAudio = false;
     }
-    
-    async playAudioChunk(audioBase64) {
-        return new Promise((resolve, reject) => {
-            try {
-                // Decode base64 to ArrayBuffer
-                const binaryString = atob(audioBase64);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                
-                const int16Array = new Int16Array(bytes.buffer);
-                
-                if (int16Array.length === 0) {
-                    console.warn('Audio chunk has no samples, skipping');
-                    resolve();
-                    return;
-                }
-                
-                const float32Array = new Float32Array(int16Array.length);
-                
-                // Convert int16 to float32
-                for (let i = 0; i < int16Array.length; i++) {
-                    float32Array[i] = int16Array[i] / 32768.0;
-                }
-                
-                const audioBuffer = this.playbackAudioContext.createBuffer(1, float32Array.length, 24000);
-                audioBuffer.getChannelData(0).set(float32Array);
-                
-                const source = this.playbackAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(this.playbackAudioContext.destination);
-                
-                // Store reference to current source
-                this.currentAudioSource = source;
-                
-                source.onended = () => {
-                    this.currentAudioSource = null;
-                    resolve();
-                };
-                source.start();
-                
-            } catch (error) {
-                console.error('Failed to play audio chunk:', error);
-                reject(error);
+
+    playAudioChunk(audioBase64) {
+        try {
+            // Decode base64 to ArrayBuffer
+            const binaryString = atob(audioBase64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
             }
-        });
+
+            const int16Array = new Int16Array(bytes.buffer);
+
+            if (int16Array.length === 0) {
+                console.warn('Audio chunk has no samples, skipping');
+                return;
+            }
+
+            const float32Array = new Float32Array(int16Array.length);
+
+            // Convert int16 to float32
+            for (let i = 0; i < int16Array.length; i++) {
+                float32Array[i] = int16Array[i] / 32768.0;
+            }
+
+            const audioBuffer = this.playbackAudioContext.createBuffer(1, float32Array.length, 24000);
+            audioBuffer.getChannelData(0).set(float32Array);
+
+            const source = this.playbackAudioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(this.playbackAudioContext.destination);
+
+            // Store reference to current source
+            this.currentAudioSource = source;
+
+            source.onended = () => {
+                if (this.currentAudioSource === source) {
+                    this.currentAudioSource = null;
+                }
+            };
+
+            const startTime = Math.max(
+                this.playbackAudioContext.currentTime,
+                this.nextPlaybackTime
+            );
+            source.start(startTime);
+            this.nextPlaybackTime = startTime + audioBuffer.duration;
+        } catch (error) {
+            console.error('Failed to play audio chunk:', error);
+        }
     }
     
     stopAudioPlayback() {
@@ -452,6 +456,9 @@ class RealtimeDemo {
         
         // Reset playback state
         this.isPlayingAudio = false;
+        this.nextPlaybackTime = this.playbackAudioContext
+            ? this.playbackAudioContext.currentTime
+            : 0;
         
         console.log('Audio playback stopped and queue cleared');
     }
