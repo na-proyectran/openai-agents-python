@@ -12,8 +12,10 @@ class RealtimeDemo {
         // Audio playback queue
         this.audioQueue = [];
         this.isPlayingAudio = false;
+        this.isProcessingAudioQueue = false;
         this.playbackAudioContext = null;
-        this.currentAudioSource = null;
+        this.nextPlaybackTime = 0;
+        this.audioSources = [];
         
         this.initializeElements();
         this.setupEventListeners();
@@ -80,6 +82,7 @@ class RealtimeDemo {
             this.ws.close();
         }
         this.stopContinuousCapture();
+        this.stopAudioPlayback();
     }
     
     updateConnectionUI() {
@@ -352,108 +355,123 @@ class RealtimeDemo {
                 console.warn('Received empty audio data, skipping playback');
                 return;
             }
-            
+
             // Add to queue
             this.audioQueue.push(audioBase64);
-            
-            // Start processing queue if not already playing
-            if (!this.isPlayingAudio) {
+            // Start processing queue if not already processing
+            if (!this.isProcessingAudioQueue) {
                 this.processAudioQueue();
             }
-            
+
         } catch (error) {
             console.error('Failed to play audio:', error);
         }
     }
-    
-    async processAudioQueue() {
-        if (this.isPlayingAudio || this.audioQueue.length === 0) {
+
+    processAudioQueue() {
+        if (this.isProcessingAudioQueue || this.audioQueue.length === 0) {
             return;
         }
-        
-        this.isPlayingAudio = true;
-        
+
+        this.isProcessingAudioQueue = true;
+
         // Initialize audio context if needed
         if (!this.playbackAudioContext) {
             this.playbackAudioContext = new AudioContext({ sampleRate: 24000 });
+            this.nextPlaybackTime = this.playbackAudioContext.currentTime;
         }
-        
+
         while (this.audioQueue.length > 0) {
             const audioBase64 = this.audioQueue.shift();
-            await this.playAudioChunk(audioBase64);
+            this.scheduleAudioChunk(audioBase64);
         }
-        
-        this.isPlayingAudio = false;
+
+        this.isProcessingAudioQueue = false;
     }
-    
-    async playAudioChunk(audioBase64) {
-        return new Promise((resolve, reject) => {
-            try {
-                // Decode base64 to ArrayBuffer
-                const binaryString = atob(audioBase64);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                
-                const int16Array = new Int16Array(bytes.buffer);
-                
-                if (int16Array.length === 0) {
-                    console.warn('Audio chunk has no samples, skipping');
-                    resolve();
-                    return;
-                }
-                
-                const float32Array = new Float32Array(int16Array.length);
-                
-                // Convert int16 to float32
-                for (let i = 0; i < int16Array.length; i++) {
-                    float32Array[i] = int16Array[i] / 32768.0;
-                }
-                
-                const audioBuffer = this.playbackAudioContext.createBuffer(1, float32Array.length, 24000);
-                audioBuffer.getChannelData(0).set(float32Array);
-                
-                const source = this.playbackAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(this.playbackAudioContext.destination);
-                
-                // Store reference to current source
-                this.currentAudioSource = source;
-                
-                source.onended = () => {
-                    this.currentAudioSource = null;
-                    resolve();
-                };
-                source.start();
-                
-            } catch (error) {
-                console.error('Failed to play audio chunk:', error);
-                reject(error);
+
+    scheduleAudioChunk(audioBase64) {
+        try {
+            // Decode base64 to ArrayBuffer
+            const binaryString = atob(audioBase64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
             }
-        });
+
+            const int16Array = new Int16Array(bytes.buffer);
+
+            if (int16Array.length === 0) {
+                console.warn('Audio chunk has no samples, skipping');
+                return;
+            }
+
+            const float32Array = new Float32Array(int16Array.length);
+
+            // Convert int16 to float32
+            for (let i = 0; i < int16Array.length; i++) {
+                float32Array[i] = int16Array[i] / 32768.0;
+            }
+
+            const audioBuffer = this.playbackAudioContext.createBuffer(1, float32Array.length, 24000);
+            audioBuffer.getChannelData(0).set(float32Array);
+
+            const source = this.playbackAudioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(this.playbackAudioContext.destination);
+
+            const startTime = Math.max(this.playbackAudioContext.currentTime, this.nextPlaybackTime);
+            this.nextPlaybackTime = startTime + audioBuffer.duration;
+
+            this.audioSources.push(source);
+            source.onended = () => {
+                const index = this.audioSources.indexOf(source);
+                if (index !== -1) {
+                    this.audioSources.splice(index, 1);
+                }
+                if (this.audioSources.length === 0 && this.audioQueue.length === 0) {
+                    this.isPlayingAudio = false;
+                }
+            };
+            source.start(startTime);
+            this.isPlayingAudio = true;
+
+        } catch (error) {
+            console.error('Failed to play audio chunk:', error);
+        }
     }
     
     stopAudioPlayback() {
         console.log('Stopping audio playback due to interruption');
-        
-        // Stop current audio source if playing
-        if (this.currentAudioSource) {
+
+        // Stop all scheduled sources
+        for (const source of this.audioSources) {
             try {
-                this.currentAudioSource.stop();
-                this.currentAudioSource = null;
+                source.stop();
             } catch (error) {
                 console.error('Error stopping audio source:', error);
             }
         }
-        
+        this.audioSources = [];
+
         // Clear the audio queue
         this.audioQueue = [];
-        
-        // Reset playback state
+
+        // Close and reset audio context
+        if (this.playbackAudioContext) {
+            try {
+                this.playbackAudioContext.close();
+            } catch (error) {
+                console.error('Error closing audio context:', error);
+            }
+            this.playbackAudioContext = null;
+        }
+
+        // Reset timing and state
+        this.nextPlaybackTime = 0;
         this.isPlayingAudio = false;
-        
-        console.log('Audio playback stopped and queue cleared');
+        this.isProcessingAudioQueue = false;
+
+        console.log('Audio playback stopped and resources cleared');
     }
     
     scrollToBottom() {
