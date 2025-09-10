@@ -3,29 +3,55 @@ class RealtimeLog {
         this.ws = null;
         this.isConnected = false;
         this.sessionId = null;
-        this.connectBtn = document.getElementById('connectBtn');
         this.status = document.getElementById('status');
-        this.sessionInput = document.getElementById('sessionInput');
+        this.sessionSelect = document.getElementById('sessionSelect');
+        this.refreshBtn = document.getElementById('refreshBtn');
         this.messagesContent = document.getElementById('messagesContent');
         this.eventsContent = document.getElementById('eventsContent');
         this.toolsContent = document.getElementById('toolsContent');
-        this.connectBtn.addEventListener('click', () => {
-            if (this.isConnected) {
-                this.disconnect();
+
+        this.refreshBtn.addEventListener('click', () => this.fetchSessions());
+        this.sessionSelect.addEventListener('change', () => {
+            const selected = this.sessionSelect.value;
+            if (selected) {
+                this.connect(selected);
             } else {
-                this.connect();
+                this.disconnect();
             }
         });
+
+        this.fetchSessions();
     }
 
-    generateSessionId() {
-        return 'session_' + Math.random().toString(36).substr(2, 9);
+    async fetchSessions() {
+        try {
+            const response = await fetch('/sessions');
+            const data = await response.json();
+            const sessions = data.sessions || [];
+            const current = this.sessionSelect.value;
+            this.sessionSelect.innerHTML = '<option value="">Select session</option>';
+            sessions.forEach((id) => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = id;
+                this.sessionSelect.appendChild(option);
+            });
+            if (current && sessions.includes(current)) {
+                this.sessionSelect.value = current;
+            } else if (!sessions.includes(this.sessionId)) {
+                this.disconnect();
+            }
+        } catch (err) {
+            console.error('Failed to fetch sessions', err);
+        }
     }
 
-    connect() {
-        this.sessionId = this.sessionInput.value.trim() || this.generateSessionId();
-        this.sessionInput.value = this.sessionId;
-        this.ws = new WebSocket(`ws://localhost:8000/ws/${this.sessionId}`);
+    connect(sessionId) {
+        if (this.ws) {
+            this.ws.close();
+        }
+        this.sessionId = sessionId;
+        this.ws = new WebSocket(`ws://${location.host}/ws/${sessionId}`);
         this.ws.onopen = () => {
             this.isConnected = true;
             this.updateUI();
@@ -44,18 +70,18 @@ class RealtimeLog {
     disconnect() {
         if (this.ws) {
             this.ws.close();
+            this.ws = null;
         }
+        this.isConnected = false;
+        this.sessionId = null;
+        this.updateUI();
     }
 
     updateUI() {
-        if (this.isConnected) {
-            this.connectBtn.textContent = 'Disconnect';
-            this.connectBtn.className = 'connect-btn connected';
-            this.status.textContent = 'Connected';
+        if (this.isConnected && this.sessionId) {
+            this.status.textContent = `Connected: ${this.sessionId}`;
             this.status.className = 'status connected';
         } else {
-            this.connectBtn.textContent = 'Connect';
-            this.connectBtn.className = 'connect-btn disconnected';
             this.status.textContent = 'Disconnected';
             this.status.className = 'status disconnected';
         }
