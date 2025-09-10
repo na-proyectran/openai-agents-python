@@ -60,8 +60,10 @@ class RealtimeWebSocketManager:
             # "handoffs": [],                        # opcional
             # "tracing": {"enabled": False},         # opcional
         }
-        runner = RealtimeRunner(starting_agent=get_starting_agent(),
-                                config=RealtimeRunConfig(model_settings=model_settings))
+        agent = get_starting_agent()
+        runner = RealtimeRunner(starting_agent=get_starting_agent())
+        # runner = RealtimeRunner(starting_agent=get_starting_agent(),
+        #                         config=RealtimeRunConfig(model_settings=model_settings))
         session_context = await runner.run()
         session = await session_context.__aenter__()
         self.active_sessions[session_id] = session
