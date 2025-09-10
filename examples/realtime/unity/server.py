@@ -3,8 +3,9 @@ import base64
 import json
 import logging
 import struct
+import uuid
 from contextlib import asynccontextmanager
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -40,12 +41,26 @@ class RealtimeWebSocketManager:
         self.active_sessions: dict[str, RealtimeSession] = {}
         self.session_contexts: dict[str, Any] = {}
         self.websockets: dict[str, set[WebSocket]] = {}
+        self.owner_websockets: dict[str, WebSocket] = {}
+        self.session_ids: set[str] = set()
+
+    def create_session(self) -> str:
+        session_id = uuid.uuid4().hex
+        self.session_ids.add(session_id)
+        self.websockets.setdefault(session_id, set())
+        return session_id
+
+    def list_sessions(self) -> list[str]:
+        return sorted(self.session_ids)
 
     async def connect(self, websocket: WebSocket, session_id: str) -> None:
         await websocket.accept()
         self.websockets.setdefault(session_id, set()).add(websocket)
+        if session_id not in self.session_ids:
+            self.session_ids.add(session_id)
 
-        if session_id not in self.active_sessions:
+        if session_id not in self.owner_websockets:
+            self.owner_websockets[session_id] = websocket
             runner = RealtimeRunner(starting_agent=get_starting_agent())
             session_context = await runner.run()
             session = await session_context.__aenter__()
@@ -53,14 +68,27 @@ class RealtimeWebSocketManager:
             self.session_contexts[session_id] = session_context
             asyncio.create_task(self._process_events(session_id))
 
-    async def disconnect(self, session_id: str):
+    async def disconnect_websocket(self, session_id: str, websocket: WebSocket) -> None:
+        websockets = self.websockets.get(session_id)
+        if websockets is not None:
+            websockets.discard(websocket)
+        if self.owner_websockets.get(session_id) == websocket:
+            await self.disconnect(session_id)
+
+    async def disconnect(self, session_id: str) -> None:
+        for ws in list(self.websockets.get(session_id, set())):
+            try:
+                await ws.close()
+            except Exception:  # pragma: no cover - best effort
+                pass
         if session_id in self.session_contexts:
             await self.session_contexts[session_id].__aexit__(None, None, None)
             del self.session_contexts[session_id]
         if session_id in self.active_sessions:
             del self.active_sessions[session_id]
-        if session_id in self.websockets:
-            del self.websockets[session_id]
+        self.websockets.pop(session_id, None)
+        self.owner_websockets.pop(session_id, None)
+        self.session_ids.discard(session_id)
 
     async def send_audio(self, session_id: str, audio_bytes: bytes) -> None:
         session = self.active_sessions.get(session_id)
@@ -140,7 +168,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             elif message["type"] == "text":
                 await manager.send_text(session_id, message["text"])
     except WebSocketDisconnect:
-        await manager.disconnect(session_id)
+        await manager.disconnect_websocket(session_id, websocket)
+
+
+@app.post("/sessions")
+async def create_session() -> dict[str, str]:
+    session_id = manager.create_session()
+    return {"session_id": session_id}
+
+
+@app.get("/sessions")
+async def list_sessions() -> dict[str, list[str]]:
+    return {"sessions": manager.list_sessions()}
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
