@@ -11,8 +11,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from typing_extensions import assert_never
 
-from agents.realtime import RealtimeRunner, RealtimeSession, RealtimeSessionEvent, \
-    RealtimeRunConfig, RealtimeSessionModelSettings, RealtimeModelConfig, RealtimeModel, OpenAIRealtimeWebSocketModel
+from agents.realtime import (
+    RealtimeRunner,
+    RealtimeSession,
+    RealtimeSessionEvent,
+    RealtimeSessionModelSettings,
+)
 
 # Import TwilioHandler class - handle both module and package use cases
 if TYPE_CHECKING:
@@ -42,7 +46,7 @@ class RealtimeWebSocketManager:
         await websocket.accept()
         self.websockets[session_id] = websocket
 
-        model_settings: RealtimeSessionModelSettings = {
+        _model_settings: RealtimeSessionModelSettings = {
             "model_name": "gpt-realtime",
             "modalities": ["text", "audio"],
             "voice": "marin",
@@ -60,7 +64,7 @@ class RealtimeWebSocketManager:
             # "handoffs": [],                        # opcional
             # "tracing": {"enabled": False},         # opcional
         }
-        #config = RealtimeRunConfig(model_settings=model_settings)
+        # config = RealtimeRunConfig(model_settings=model_settings)
         runner = RealtimeRunner(starting_agent=get_starting_agent())
         # runner = RealtimeRunner(starting_agent=get_starting_agent(),
         #                         config=RealtimeRunConfig(model_settings=model_settings))
