@@ -4,7 +4,7 @@ import json
 import logging
 import struct
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -16,7 +16,18 @@ from agents.realtime import (
     RealtimeSessionEvent,
 )
 
-from .agent import get_starting_agent
+# Import class - handle both module and package use cases
+if TYPE_CHECKING:
+    # For type checking, use the relative import
+    from .agent import get_starting_agent
+else:
+    # At runtime, try both import styles
+    try:
+        # Try relative import first (when used as a package)
+        from .agent import get_starting_agent
+    except ImportError:
+        # Fall back to direct import (when run as a script)
+        from agent import get_starting_agent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,16 +53,14 @@ class RealtimeWebSocketManager:
             self.session_contexts[session_id] = session_context
             asyncio.create_task(self._process_events(session_id))
 
-    async def disconnect(self, session_id: str, websocket: WebSocket) -> None:
-        webs = self.websockets.get(session_id)
-        if webs:
-            webs.discard(websocket)
-            if not webs:
-                self.websockets.pop(session_id, None)
-                context = self.session_contexts.pop(session_id, None)
-                if context is not None:
-                    await context.__aexit__(None, None, None)
-                self.active_sessions.pop(session_id, None)
+    async def disconnect(self, session_id: str):
+        if session_id in self.session_contexts:
+            await self.session_contexts[session_id].__aexit__(None, None, None)
+            del self.session_contexts[session_id]
+        if session_id in self.active_sessions:
+            del self.active_sessions[session_id]
+        if session_id in self.websockets:
+            del self.websockets[session_id]
 
     async def send_audio(self, session_id: str, audio_bytes: bytes) -> None:
         session = self.active_sessions.get(session_id)
@@ -131,7 +140,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             elif message["type"] == "text":
                 await manager.send_text(session_id, message["text"])
     except WebSocketDisconnect:
-        await manager.disconnect(session_id, websocket)
+        await manager.disconnect(session_id)
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
