@@ -4,7 +4,7 @@ import json
 import logging
 import struct
 from contextlib import asynccontextmanager
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse

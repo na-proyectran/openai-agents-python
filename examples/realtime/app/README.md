@@ -20,6 +20,8 @@ cd examples/realtime/app && uv run python server.py
 
 Then open your browser to: http://localhost:8000
 
+For a read-only view of active conversation transcripts, visit http://localhost:8000/viewer. Use the **Refresh Sessions** button to list active session identifiers and connect to one to watch its transcript update in real time.
+
 ## Customization
 
 To use the same UI with your own agents, edit `agent.py` and ensure get_starting_agent() returns the right starting agent for your use case.

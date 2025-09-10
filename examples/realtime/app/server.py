@@ -11,8 +11,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from typing_extensions import assert_never
 
-from agents.realtime import RealtimeRunner, RealtimeSession, RealtimeSessionEvent, \
-    RealtimeRunConfig, RealtimeSessionModelSettings, RealtimeModelConfig, RealtimeModel, OpenAIRealtimeWebSocketModel
+from agents.realtime import (
+    RealtimeRunner,
+    RealtimeSession,
+    RealtimeSessionEvent,
+)
 
 # Import TwilioHandler class - handle both module and package use cases
 if TYPE_CHECKING:
@@ -37,33 +40,14 @@ class RealtimeWebSocketManager:
         self.active_sessions: dict[str, RealtimeSession] = {}
         self.session_contexts: dict[str, Any] = {}
         self.websockets: dict[str, WebSocket] = {}
+        self.watchers: dict[str, set[WebSocket]] = {}
+        self.transcripts: dict[str, list[dict[str, Any]]] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str):
         await websocket.accept()
         self.websockets[session_id] = websocket
 
-        model_settings: RealtimeSessionModelSettings = {
-            "model_name": "gpt-realtime",
-            "modalities": ["text", "audio"],
-            "voice": "marin",
-            "speed": 1.0,
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "input_audio_transcription": {
-                "model": "gpt-4o-mini-transcribe",
-            },
-            "turn_detection": {"type": "semantic_vad", "threshold": 0.5},
-            # "instructions": "…",                   # opcional
-            # "prompt": "…",                         # opcional
-            # "tool_choice": "auto",                 # opcional
-            # "tools": [],                           # opcional
-            # "handoffs": [],                        # opcional
-            # "tracing": {"enabled": False},         # opcional
-        }
-        #config = RealtimeRunConfig(model_settings=model_settings)
         runner = RealtimeRunner(starting_agent=get_starting_agent())
-        # runner = RealtimeRunner(starting_agent=get_starting_agent(),
-        #                         config=RealtimeRunConfig(model_settings=model_settings))
         session_context = await runner.run()
         session = await session_context.__aenter__()
         self.active_sessions[session_id] = session
@@ -80,6 +64,12 @@ class RealtimeWebSocketManager:
             del self.active_sessions[session_id]
         if session_id in self.websockets:
             del self.websockets[session_id]
+        if session_id in self.watchers:
+            for ws in list(self.watchers[session_id]):
+                await ws.close()
+            del self.watchers[session_id]
+        if session_id in self.transcripts:
+            del self.transcripts[session_id]
 
     async def send_audio(self, session_id: str, audio_bytes: bytes):
         if session_id in self.active_sessions:
@@ -93,6 +83,17 @@ class RealtimeWebSocketManager:
             async for event in session:
                 event_data = await self._serialize_event(event)
                 await websocket.send_text(json.dumps(event_data))
+                if event.type == "history_updated":
+                    self.transcripts[session_id] = event_data["history"]
+                if session_id in self.watchers:
+                    to_remove: list[WebSocket] = []
+                    for watcher in self.watchers[session_id]:
+                        try:
+                            await watcher.send_text(json.dumps(event_data))
+                        except Exception:
+                            to_remove.append(watcher)
+                    for watcher in to_remove:
+                        self.watchers[session_id].discard(watcher)
         except Exception as e:
             logger.error(f"Error processing events for session {session_id}: {e}")
 
@@ -170,12 +171,43 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await manager.disconnect(session_id)
 
 
+@app.get("/sessions")
+async def list_sessions() -> list[str]:
+    """Return a list of active session identifiers."""
+    return list(manager.active_sessions.keys())
+
+
+@app.websocket("/watch/{session_id}")
+async def watch_session(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+    manager.watchers.setdefault(session_id, set()).add(websocket)
+    if session_id in manager.transcripts:
+        await websocket.send_text(
+            json.dumps({"type": "history_snapshot", "history": manager.transcripts[session_id]})
+        )
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if session_id in manager.watchers:
+            manager.watchers[session_id].discard(websocket)
+            if not manager.watchers[session_id]:
+                del manager.watchers[session_id]
+
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
 @app.get("/")
 async def read_index():
     return FileResponse("static/index.html")
+
+
+@app.get("/viewer")
+async def read_viewer():
+    return FileResponse("static/viewer.html")
 
 
 if __name__ == "__main__":
