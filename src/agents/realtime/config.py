@@ -6,6 +6,9 @@ from typing import (
     Union,
 )
 
+from openai.types.realtime.realtime_audio_formats import (
+    RealtimeAudioFormats as OpenAIRealtimeAudioFormats,
+)
 from typing_extensions import NotRequired, TypeAlias, TypedDict
 
 from agents.prompts import Prompt
@@ -107,10 +110,10 @@ class RealtimeSessionModelSettings(TypedDict):
     speed: NotRequired[float]
     """The speed of the model's responses."""
 
-    input_audio_format: NotRequired[RealtimeAudioFormat]
+    input_audio_format: NotRequired[RealtimeAudioFormat | OpenAIRealtimeAudioFormats]
     """The format for input audio streams."""
 
-    output_audio_format: NotRequired[RealtimeAudioFormat]
+    output_audio_format: NotRequired[RealtimeAudioFormat | OpenAIRealtimeAudioFormats]
     """The format for output audio streams."""
 
     input_audio_transcription: NotRequired[RealtimeInputAudioTranscriptionConfig]
@@ -184,6 +187,14 @@ class RealtimeUserInputText(TypedDict):
     """The text content from the user."""
 
 
+class RealtimeUserInputImage(TypedDict, total=False):
+    """An image input from the user (Realtime)."""
+
+    type: Literal["input_image"]
+    image_url: str
+    detail: NotRequired[Literal["auto", "low", "high"] | str]
+
+
 class RealtimeUserInputMessage(TypedDict):
     """A message input from the user."""
 
@@ -193,8 +204,8 @@ class RealtimeUserInputMessage(TypedDict):
     role: Literal["user"]
     """The role identifier for user messages."""
 
-    content: list[RealtimeUserInputText]
-    """List of text content items in the message."""
+    content: list[RealtimeUserInputText | RealtimeUserInputImage]
+    """List of content items (text and image) in the message."""
 
 
 RealtimeUserInput: TypeAlias = Union[str, RealtimeUserInputMessage]
