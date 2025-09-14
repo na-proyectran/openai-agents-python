@@ -22,6 +22,14 @@ class SessionViewer {
         this.loadSessions();
     }
 
+    resetView() {
+        this.messageNodes.clear();
+        this.seenItemIds.clear();
+        this.messagesContent.innerHTML = '';
+        this.eventsContent.innerHTML = '';
+        this.toolsContent.innerHTML = '';
+    }
+
     async loadSessions() {
         try {
             const res = await fetch('/sessions');
@@ -43,6 +51,7 @@ class SessionViewer {
             this.ws.close();
             this.ws = null;
         }
+        this.resetView();
         this.status.textContent = 'Connecting...';
         this.status.className = 'status';
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -138,8 +147,41 @@ class SessionViewer {
 
     syncMissingFromHistory(history) {
         if (!history || !Array.isArray(history)) return;
-        for (const item of history) {
-            if (!item || item.type !== 'message') continue;
+
+        const items = history.filter(
+            (item) => item && item.type === 'message'
+        );
+
+        const byId = new Map(items.map((it) => [it.item_id, it]));
+        const nextMap = new Map();
+        for (const it of items) {
+            if (it.previous_item_id) {
+                nextMap.set(it.previous_item_id, it);
+            }
+        }
+
+        let start = null;
+        for (const it of items) {
+            if (!it.previous_item_id || !byId.has(it.previous_item_id)) {
+                start = it;
+                break;
+            }
+        }
+
+        const ordered = [];
+        let current = start;
+        while (current) {
+            ordered.push(current);
+            current = nextMap.get(current.item_id);
+        }
+
+        if (ordered.length < items.length) {
+            for (const it of items) {
+                if (!ordered.includes(it)) ordered.push(it);
+            }
+        }
+
+        for (const item of ordered) {
             const id = item.item_id;
             if (!id) continue;
             if (!this.seenItemIds.has(id)) {
