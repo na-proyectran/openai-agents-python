@@ -10,6 +10,9 @@ class RealtimeLog {
         this.eventsContent = document.getElementById('eventsContent');
         this.toolsContent = document.getElementById('toolsContent');
 
+        const params = new URLSearchParams(window.location.search);
+        this.pendingSession = params.get('session');
+
         this.refreshBtn.addEventListener('click', () => this.fetchSessions());
         this.sessionSelect.addEventListener('change', () => {
             const selected = this.sessionSelect.value;
@@ -36,7 +39,11 @@ class RealtimeLog {
                 option.textContent = id;
                 this.sessionSelect.appendChild(option);
             });
-            if (current && sessions.includes(current)) {
+            if (this.pendingSession && sessions.includes(this.pendingSession)) {
+                this.sessionSelect.value = this.pendingSession;
+                this.connect(this.pendingSession);
+                this.pendingSession = null;
+            } else if (current && sessions.includes(current)) {
                 this.sessionSelect.value = current;
             } else if (!sessions.includes(this.sessionId)) {
                 this.disconnect();
