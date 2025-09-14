@@ -86,12 +86,12 @@ class SessionViewer {
                 this.syncMissingFromHistory(event.history);
                 this.updateLastMessageFromHistory(event.history);
                 break;
-            case 'history_added':
-                // Append just the new item without clearing the thread.
-                if (event.item) {
-                    this.addMessageFromItem(event.item);
-                }
-                break;
+//            case 'history_added':
+//                // Append just the new item without clearing the thread.
+//                if (event.item) {
+//                    this.addMessageFromItem(event.item);
+//                }
+//                break;
         }
     }
     updateLastMessageFromHistory(history) {
@@ -147,41 +147,8 @@ class SessionViewer {
 
     syncMissingFromHistory(history) {
         if (!history || !Array.isArray(history)) return;
-
-        const items = history.filter(
-            (item) => item && item.type === 'message'
-        );
-
-        const byId = new Map(items.map((it) => [it.item_id, it]));
-        const nextMap = new Map();
-        for (const it of items) {
-            if (it.previous_item_id) {
-                nextMap.set(it.previous_item_id, it);
-            }
-        }
-
-        let start = null;
-        for (const it of items) {
-            if (!it.previous_item_id || !byId.has(it.previous_item_id)) {
-                start = it;
-                break;
-            }
-        }
-
-        const ordered = [];
-        let current = start;
-        while (current) {
-            ordered.push(current);
-            current = nextMap.get(current.item_id);
-        }
-
-        if (ordered.length < items.length) {
-            for (const it of items) {
-                if (!ordered.includes(it)) ordered.push(it);
-            }
-        }
-
-        for (const item of ordered) {
+        for (const item of history) {
+            if (!item || item.type !== 'message') continue;
             const id = item.item_id;
             if (!id) continue;
             if (!this.seenItemIds.has(id)) {
