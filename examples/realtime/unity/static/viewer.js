@@ -22,6 +22,14 @@ class SessionViewer {
         this.loadSessions();
     }
 
+    resetView() {
+        this.messageNodes.clear();
+        this.seenItemIds.clear();
+        this.messagesContent.innerHTML = '';
+        this.eventsContent.innerHTML = '';
+        this.toolsContent.innerHTML = '';
+    }
+
     async loadSessions() {
         try {
             const res = await fetch('/sessions');
@@ -43,6 +51,7 @@ class SessionViewer {
             this.ws.close();
             this.ws = null;
         }
+        this.resetView();
         this.status.textContent = 'Connecting...';
         this.status.className = 'status';
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -77,12 +86,12 @@ class SessionViewer {
                 this.syncMissingFromHistory(event.history);
                 this.updateLastMessageFromHistory(event.history);
                 break;
-            case 'history_added':
-                // Append just the new item without clearing the thread.
-                if (event.item) {
-                    this.addMessageFromItem(event.item);
-                }
-                break;
+//            case 'history_added':
+//                // Append just the new item without clearing the thread.
+//                if (event.item) {
+//                    this.addMessageFromItem(event.item);
+//                }
+//                break;
         }
     }
     updateLastMessageFromHistory(history) {
