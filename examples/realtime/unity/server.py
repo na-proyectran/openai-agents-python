@@ -368,18 +368,15 @@ async def get_sessions():
     return {"sessions": list(manager.active_sessions.keys())}
 
 
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
-
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def read_index():
-    return FileResponse("static/index.html")
-
+    return FileResponse("static/index.html", media_type="text/html")
 
 @app.get("/viewer")
 async def read_viewer():
-    return FileResponse("static/viewer.html")
-
+    return FileResponse("static/viewer.html", media_type="text/html")
 
 if __name__ == "__main__":
     import uvicorn

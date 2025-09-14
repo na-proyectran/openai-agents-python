@@ -1,12 +1,6 @@
 class SessionViewer {
     constructor() {
         this.ws = null;
-        this.audioQueue = [];
-        this.isPlayingAudio = false;
-        this.playbackAudioContext = null;
-        this.currentAudioSource = null;
-        this.currentAudioGain = null;
-        this.playbackFadeSec = 0.02;
         this.messageNodes = new Map();
         this.seenItemIds = new Set();
 
@@ -69,22 +63,22 @@ class SessionViewer {
     }
 
     handleRealtimeEvent(event) {
+        // Add to raw events pane
         this.addRawEvent(event);
+
+        // Add to tools panel if it's a tool or handoff event
         if (event.type === 'tool_start' || event.type === 'tool_end' || event.type === 'handoff') {
             this.addToolEvent(event);
         }
+
+        // Handle specific event types
         switch (event.type) {
-            case 'audio':
-                this.playAudio(event.audio);
-                break;
-            case 'audio_interrupted':
-                this.stopAudioPlayback();
-                break;
             case 'history_updated':
                 this.syncMissingFromHistory(event.history);
                 this.updateLastMessageFromHistory(event.history);
                 break;
             case 'history_added':
+                // Append just the new item without clearing the thread.
                 if (event.item) {
                     this.addMessageFromItem(event.item);
                 }
@@ -106,6 +100,7 @@ class SessionViewer {
 
     updateLastMessageFromHistory(history) {
         if (!history || !Array.isArray(history) || history.length === 0) return;
+        // Find the last message item in history
         let last = null;
         for (let i = history.length - 1; i >= 0; i--) {
             const it = history[i];
@@ -113,6 +108,8 @@ class SessionViewer {
         }
         if (!last) return;
         const itemId = last.item_id;
+
+        // Extract a text representation (for assistant transcript updates)
         let text = '';
         if (Array.isArray(last.content)) {
             for (const part of last.content) {
@@ -122,15 +119,21 @@ class SessionViewer {
                 else if ((part.type === 'input_audio' || part.type === 'audio') && part.transcript) text += part.transcript;
             }
         }
+
         const node = this.messageNodes.get(itemId);
         if (!node) {
+            // If we haven't rendered this item yet, append it now.
             this.addMessageFromItem(last);
             return;
         }
+
+        // Update only the text content of the bubble, preserving any images already present.
         const bubble = node.querySelector('.message-bubble');
         if (bubble && text && text.trim()) {
+            // If there's an <img>, keep it and only update the trailing caption/text node.
             const hasImg = !!bubble.querySelector('img');
             if (hasImg) {
+                // Ensure there is a caption div after the image
                 let cap = bubble.querySelector('.image-caption');
                 if (!cap) {
                     cap = document.createElement('div');
@@ -146,12 +149,25 @@ class SessionViewer {
         }
     }
 
+    syncMissingFromHistory(history) {
+        if (!history || !Array.isArray(history)) return;
+        for (const item of history) {
+            if (!item || item.type !== 'message') continue;
+            const id = item.item_id;
+            if (!id) continue;
+            if (!this.seenItemIds.has(id)) {
+                this.addMessageFromItem(item);
+            }
+        }
+    }
+
     addMessageFromItem(item) {
         try {
             if (!item || item.type !== 'message') return;
             const role = item.role;
             let content = '';
             let imageUrls = [];
+
             if (Array.isArray(item.content)) {
                 for (const contentPart of item.content) {
                     if (!contentPart || typeof contentPart !== 'object') continue;
@@ -169,6 +185,7 @@ class SessionViewer {
                     }
                 }
             }
+
             let node = null;
             if (imageUrls.length > 0) {
                 for (const url of imageUrls) {
@@ -189,26 +206,32 @@ class SessionViewer {
     addMessage(type, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
+
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
         bubbleDiv.textContent = content;
+
         messageDiv.appendChild(bubbleDiv);
         this.messagesContent.appendChild(messageDiv);
         this.scrollToBottom();
+
         return messageDiv;
     }
 
     addImageMessage(role, imageUrl, caption = '') {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
+
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
+
         const img = document.createElement('img');
         img.src = imageUrl;
         img.alt = 'Uploaded image';
         img.style.maxWidth = '220px';
         img.style.borderRadius = '8px';
         img.style.display = 'block';
+
         bubbleDiv.appendChild(img);
         if (caption) {
             const cap = document.createElement('div');
@@ -216,9 +239,11 @@ class SessionViewer {
             cap.style.marginTop = '0.5rem';
             bubbleDiv.appendChild(cap);
         }
+
         messageDiv.appendChild(bubbleDiv);
         this.messagesContent.appendChild(messageDiv);
         this.scrollToBottom();
+
         return messageDiv;
     }
 
@@ -229,32 +254,40 @@ class SessionViewer {
     addRawEvent(event) {
         const eventDiv = document.createElement('div');
         eventDiv.className = 'event';
+
         const headerDiv = document.createElement('div');
         headerDiv.className = 'event-header';
         headerDiv.innerHTML = `
             <span>${event.type}</span>
             <span>▼</span>
         `;
+
         const contentDiv = document.createElement('div');
         contentDiv.className = 'event-content collapsed';
         contentDiv.textContent = JSON.stringify(event, null, 2);
+
         headerDiv.addEventListener('click', () => {
             const isCollapsed = contentDiv.classList.contains('collapsed');
             contentDiv.classList.toggle('collapsed');
             headerDiv.querySelector('span:last-child').textContent = isCollapsed ? '▲' : '▼';
         });
+
         eventDiv.appendChild(headerDiv);
         eventDiv.appendChild(contentDiv);
         this.eventsContent.appendChild(eventDiv);
+
+        // Auto-scroll events pane
         this.eventsContent.scrollTop = this.eventsContent.scrollHeight;
     }
 
     addToolEvent(event) {
         const eventDiv = document.createElement('div');
         eventDiv.className = 'event';
+
         let title = '';
         let description = '';
         let eventClass = '';
+
         if (event.type === 'handoff') {
             title = `🔄 Handoff`;
             description = `From ${event.from} to ${event.to}`;
@@ -268,6 +301,7 @@ class SessionViewer {
             description = `${event.tool}: ${event.output || 'No output'}`;
             eventClass = 'tool';
         }
+
         eventDiv.innerHTML = `
             <div class="event-header ${eventClass}">
                 <div>
@@ -277,115 +311,11 @@ class SessionViewer {
                 <span style="font-size: 0.7rem; opacity: 0.6;">${new Date().toLocaleTimeString()}</span>
             </div>
         `;
+
         this.toolsContent.appendChild(eventDiv);
+
+        // Auto-scroll tools pane
         this.toolsContent.scrollTop = this.toolsContent.scrollHeight;
-    }
-
-    async playAudio(audioBase64) {
-        try {
-            if (!audioBase64 || audioBase64.length === 0) {
-                console.warn('Received empty audio data, skipping playback');
-                return;
-            }
-            this.audioQueue.push(audioBase64);
-            if (!this.isPlayingAudio) {
-                this.processAudioQueue();
-            }
-        } catch (error) {
-            console.error('Failed to play audio:', error);
-        }
-    }
-
-    async processAudioQueue() {
-        if (this.isPlayingAudio || this.audioQueue.length === 0) {
-            return;
-        }
-        this.isPlayingAudio = true;
-        if (!this.playbackAudioContext) {
-            this.playbackAudioContext = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' });
-        }
-        if (this.playbackAudioContext.state === 'suspended') {
-            try { await this.playbackAudioContext.resume(); } catch {}
-        }
-        while (this.audioQueue.length > 0) {
-            const audioBase64 = this.audioQueue.shift();
-            await this.playAudioChunk(audioBase64);
-        }
-        this.isPlayingAudio = false;
-    }
-
-    async playAudioChunk(audioBase64) {
-        return new Promise((resolve, reject) => {
-            try {
-                const binaryString = atob(audioBase64);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                const int16Array = new Int16Array(bytes.buffer);
-                if (int16Array.length === 0) {
-                    resolve();
-                    return;
-                }
-                const float32Array = new Float32Array(int16Array.length);
-                for (let i = 0; i < int16Array.length; i++) {
-                    float32Array[i] = int16Array[i] / 32768.0;
-                }
-                const audioBuffer = this.playbackAudioContext.createBuffer(1, float32Array.length, 24000);
-                audioBuffer.getChannelData(0).set(float32Array);
-                const source = this.playbackAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                const gainNode = this.playbackAudioContext.createGain();
-                const now = this.playbackAudioContext.currentTime;
-                const fade = Math.min(this.playbackFadeSec, Math.max(0.005, audioBuffer.duration / 8));
-                try {
-                    gainNode.gain.cancelScheduledValues(now);
-                    gainNode.gain.setValueAtTime(0.0, now);
-                    gainNode.gain.linearRampToValueAtTime(1.0, now + fade);
-                    const endTime = now + audioBuffer.duration;
-                    gainNode.gain.setValueAtTime(1.0, Math.max(now + fade, endTime - fade));
-                    gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
-                } catch {}
-                source.connect(gainNode);
-                gainNode.connect(this.playbackAudioContext.destination);
-                this.currentAudioSource = source;
-                this.currentAudioGain = gainNode;
-                source.onended = () => {
-                    this.currentAudioSource = null;
-                    this.currentAudioGain = null;
-                    resolve();
-                };
-                source.start();
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    stopAudioPlayback() {
-        if (this.currentAudioSource && this.playbackAudioContext) {
-            try {
-                const now = this.playbackAudioContext.currentTime;
-                const fade = Math.max(0.01, this.playbackFadeSec);
-                if (this.currentAudioGain) {
-                    try {
-                        this.currentAudioGain.gain.cancelScheduledValues(now);
-                        const current = this.currentAudioGain.gain.value ?? 1.0;
-                        this.currentAudioGain.gain.setValueAtTime(current, now);
-                        this.currentAudioGain.gain.linearRampToValueAtTime(0.0001, now + fade);
-                    } catch {}
-                }
-                setTimeout(() => {
-                    try { this.currentAudioSource && this.currentAudioSource.stop(); } catch {}
-                    this.currentAudioSource = null;
-                    this.currentAudioGain = null;
-                }, Math.ceil(fade * 1000));
-            } catch (error) {
-                console.error('Error stopping audio source:', error);
-            }
-        }
-        this.audioQueue = [];
-        this.isPlayingAudio = false;
     }
 
     scrollToBottom() {
@@ -393,6 +323,7 @@ class SessionViewer {
     }
 }
 
+// Initialize the viewer when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     new SessionViewer();
 });
