@@ -353,19 +353,6 @@ class RealtimeDemo {
                 break;
         }
     }
-
-    syncMissingFromHistory(history) {
-        if (!history || !Array.isArray(history)) return;
-        for (const item of history) {
-            if (!item || item.type !== 'message') continue;
-            const id = item.item_id;
-            if (!id) continue;
-            if (!this.seenItemIds.has(id)) {
-                this.addMessageFromItem(item);
-            }
-        }
-    }
-
     updateLastMessageFromHistory(history) {
         if (!history || !Array.isArray(history) || history.length === 0) return;
         // Find the last message item in history
