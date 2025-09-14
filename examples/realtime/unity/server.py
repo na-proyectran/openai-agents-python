@@ -38,6 +38,7 @@ class RealtimeWebSocketManager:
         self.active_sessions: dict[str, RealtimeSession] = {}
         self.session_contexts: dict[str, Any] = {}
         self.websockets: dict[str, WebSocket] = {}
+        self.listeners: dict[str, set[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str):
         await websocket.accept()
@@ -61,6 +62,13 @@ class RealtimeWebSocketManager:
             del self.active_sessions[session_id]
         if session_id in self.websockets:
             del self.websockets[session_id]
+        if session_id in self.listeners:
+            for ws in list(self.listeners[session_id]):
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+            del self.listeners[session_id]
 
     async def send_audio(self, session_id: str, audio_bytes: bytes):
         if session_id in self.active_sessions:
@@ -102,8 +110,30 @@ class RealtimeWebSocketManager:
             async for event in session:
                 event_data = await self._serialize_event(event)
                 await websocket.send_text(json.dumps(event_data))
+                listeners = self.listeners.get(session_id, set())
+                for ws in list(listeners):
+                    try:
+                        await ws.send_text(json.dumps(event_data))
+                    except Exception:
+                        try:
+                            await ws.close()
+                        except Exception:
+                            pass
+                        listeners.discard(ws)
         except Exception as e:
             logger.error(f"Error processing events for session {session_id}: {e}")
+
+    async def add_listener(self, session_id: str, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self.listeners.setdefault(session_id, set()).add(websocket)
+
+    async def remove_listener(self, session_id: str, websocket: WebSocket) -> None:
+        listeners = self.listeners.get(session_id)
+        if not listeners:
+            return
+        listeners.discard(websocket)
+        if not listeners:
+            del self.listeners[session_id]
 
     async def _serialize_event(self, event: RealtimeSessionEvent) -> dict[str, Any]:
         base_event: dict[str, Any] = {
@@ -320,12 +350,35 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await manager.disconnect(session_id)
 
 
+@app.websocket("/ws/{session_id}/events")
+async def websocket_events(websocket: WebSocket, session_id: str):
+    if session_id not in manager.active_sessions:
+        await websocket.close()
+        return
+    await manager.add_listener(session_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await manager.remove_listener(session_id, websocket)
+
+
+@app.get("/sessions")
+async def get_sessions():
+    return {"sessions": list(manager.active_sessions.keys())}
+
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
 @app.get("/")
 async def read_index():
     return FileResponse("static/index.html")
+
+
+@app.get("/viewer")
+async def read_viewer():
+    return FileResponse("static/viewer.html")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,11 @@ cd examples/realtime/unity && uv run python server.py
 
 Then open your browser to: http://localhost:8000
 
+To monitor an existing session in a separate browser window, navigate to:
+http://localhost:8000/viewer
+This page lists active sessions and streams their conversations, events, and tool
+handoffs in real time.
+
 ## Customization
 
 To use the same UI with your own agents, edit `agent.py` and ensure get_starting_agent() returns the right starting agent for your use case.
