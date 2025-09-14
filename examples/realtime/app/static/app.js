@@ -390,15 +390,9 @@ class RealtimeDemo {
             if (Array.isArray(item.content)) {
                 for (const contentPart of item.content) {
                     if (!contentPart || typeof contentPart !== 'object') continue;
-                    if (contentPart.type === 'input_text' && contentPart.text) {
-                        // Server may echo the same text as both input_text and text.
-                        // Prefer input_text for user messages to avoid duplicates.
+                    if (contentPart.type === 'text' && contentPart.text) {
                         content += contentPart.text;
-                    } else if (
-                        contentPart.type === 'text' &&
-                        contentPart.text &&
-                        role !== 'user'
-                    ) {
+                    } else if (contentPart.type === 'input_text' && contentPart.text) {
                         content += contentPart.text;
                     } else if (contentPart.type === 'input_audio' && contentPart.transcript) {
                         content += contentPart.transcript;

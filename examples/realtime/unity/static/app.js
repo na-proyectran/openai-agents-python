@@ -99,7 +99,7 @@ class RealtimeDemo {
                 }
                 // Add to UI immediately for better feedback
                 console.log('Adding local user image bubble');
-                this.addUserImageMessage(dataUrl, promptText);
+                this.addUserImageMessage(dataUrl, '');
             } catch (err) {
                 console.error('Failed to process image:', err);
             }
@@ -115,8 +115,9 @@ class RealtimeDemo {
                 } else {
                     console.warn('Not connected; text will not be sent. Click Connect first.');
                 }
-                console.log('Adding local user text bubble');
-                this.addMessage('user', text);
+                // Add to UI immediately for better feedback
+                //console.log('Adding local user text bubble');
+                //this.addMessage('user', text);
             } catch (err) {
                 console.error('Failed to send text:', err);
             }
@@ -171,6 +172,7 @@ class RealtimeDemo {
             this.status.className = 'status connected';
             this.muteBtn.disabled = false;
             this.sendTextBtn.disabled = !this.isMuted;
+            this.imageBtn.disabled = false;
         } else {
             this.connectBtn.textContent = 'Connect';
             this.connectBtn.className = 'connect-btn disconnected';
@@ -178,6 +180,7 @@ class RealtimeDemo {
             this.status.className = 'status disconnected';
             this.muteBtn.disabled = true;
             this.sendTextBtn.disabled = true;
+            this.imageBtn.disabled = true;
         }
     }
 
