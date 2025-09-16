@@ -14,3 +14,15 @@ Este ejemplo muestra cómo conectarse al servidor de FastAPI ubicado en `server.
 4. Llama a `SendText("hola")` o `SendAudio(muestras)` para enviar datos al servidor.
 
 El script utiliza `System.Net.WebSockets` disponible en las versiones modernas de Unity.
+
+## Ejecutar el servidor con Docker
+
+1. Construye la imagen desde la raíz del repositorio para que el contenedor tenga acceso al código del servidor y al SDK:
+   ```bash
+   docker build -f examples/realtime/unity/client/Dockerfile -t unity-realtime-server .
+   ```
+2. Inicia el contenedor exponiendo el puerto 8000 (ajusta la variable `OPENAI_API_KEY` con tu clave):
+   ```bash
+   docker run --rm -p 8000:8000 -e OPENAI_API_KEY=tu_clave unity-realtime-server
+   ```
+3. Accede a http://localhost:8000 para usar la interfaz web y prueba tu cliente de Unity apuntando al mismo endpoint.
